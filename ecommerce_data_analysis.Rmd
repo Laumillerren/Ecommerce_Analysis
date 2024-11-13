@@ -4,26 +4,98 @@ output: html_document
 date: "2024-10-26"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Exploratory Data Analysis 
+Looking at the walmart ecommerce data aggregatial level 7 of the data. This data was created by combining the calender data with the level 7 ecommerce data from Walmart. 
+
+We will explore the distributions and relationships between the data. 
+```{r}
+library(tidyverse)
+library(readr)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+ecommerce_df = read_csv("../walmart_ecommerce_info659.csv")
+head(raw.preds)
 ```
 
-## Including Plots
+```{r}
+summary(ecommerce_df)
+```
+This is level 7 of the data. It contains the unit sales of all product, aggregated for each State and department. The data is from Walmart stores in California, Washington, and Wisconsin. The historical data range from 2011-01-29 to 2016-06-19.
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+## Distribution of Values per day 
+```{r}
+hist(ecommerce_df$value, main = "Distribution of Quantities Sold (per day)", xlab = "Sales Value", col = "coral", breaks = 30)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Total values per states
+```{r}
+state_sales = ecommerce_df %>%
+  group_by(state_id) %>%
+  summarise(total_sales = sum(value, na.rm = TRUE))
+
+# Create a bar graph
+ggplot(state_sales, aes(x = state_id, y = total_sales, fill = state_id)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantity Sold by State",
+       x = "State",
+       y = "Total Value")
+```
+```{r}
+print(state_sales)
+```
+Total values per state are in the billions. 
+
+## Total values per department
+```{r}
+dept_sales <- aggregate(value ~ dept_id, data = ecommerce_df, sum)
+
+# Barplot of sales by department
+ggplot(dept_sales, aes(x = dept_id, y = value, fill = dept_id)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Quantity Sold by Department", x = "Department", y = "Total Sales") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+```{r}
+print(dept_sales)
+```
+
+### Values Over Time
+```{r}
+library(ggplot2)
+
+# Ensure the date column is in Date format
+ecommerce_df$date = as.Date(ecommerce_df$date)
+
+# Aggregate sales by date
+daily_sales = aggregate(value ~ date, data = ecommerce_df, sum)
+
+# Plot daily sales over time
+ggplot(daily_sales, aes(x = date, y = value)) +
+  geom_line(color = "darkgreen") +
+  labs(title = "Quantity Sold Over Time", x = "Date", y = "Total Sales") +
+  theme_minimal()
+```
+
+## Monthly Sales Quantity Trends by Year
+```{r}
+ecommerce_df$month = format(as.Date(ecommerce_df$date), "%m")
+ecommerce_df$year = format(as.Date(ecommerce_df$date), "%Y")
+
+# Aggregate sales by month and year
+monthly_sales = aggregate(value ~ month + year, data = ecommerce_df, sum)
+
+# Plot monthly sales with one bar per month and segments by year
+ggplot(monthly_sales, aes(x = as.factor(month), y = value, fill = as.factor(year))) +
+  geom_bar(stat = "identity") +  # Stacked bars by default
+  labs(title = "Monthly Sales Quantity Trends by Year", x = "Month", y = "Total Sales", fill = "Year")
+```
+
+
+
+
+
+
+
+
