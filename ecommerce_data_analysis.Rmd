@@ -5,7 +5,7 @@ date: "2024-10-26"
 ---
 
 # Exploratory Data Analysis 
-Looking at the walmart ecommerce data aggregatial level 7 of the data. This data was created by combining the calender data with the level 7 ecommerce data from Walmart. 
+Looking at the Walmart eCommerce data aggregation level 7 of the data. This data was created by combining the calender data with the level 7 eCommerce data from Walmart. 
 
 We will explore the distributions and relationships between the data. 
 ```{r}
@@ -15,7 +15,7 @@ library(readr)
 
 ```{r}
 ecommerce_df = read_csv("../walmart_ecommerce_info659.csv")
-head(raw.preds)
+head(ecommerce_df)
 ```
 
 ```{r}
