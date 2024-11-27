@@ -14,16 +14,21 @@ library(readr)
 ```
 
 ```{r}
-ecommerce_df = read_csv("../walmart_ecommerce_info659.csv")
-head(ecommerce_df)
+ecommerce_df = read_csv("../level_7_train_data_with_dates.csv", show_col_types = FALSE)
+glimpse(ecommerce_df)
 ```
 
 ```{r}
 summary(ecommerce_df)
 ```
-This is level 7 of the data. It contains the unit sales of all product, aggregated for each State and department. The data is from Walmart stores in California, Washington, and Wisconsin. The historical data range from 2011-01-29 to 2016-06-19.
+This is level 7 aggregation of the data. It contains the unit sales of all product, aggregated for each State and department. The data is from Walmart stores in California, Washington, and Wisconsin. The historical data range from 2011-01-29 to 2016-05-22. 
+
+Rows: 40,761
+
+Holidays are as follows: ["Chanukah End", "Christmas", "Cinco De Mayo", "Columbus Day", "Easter", "Eid al-Fitr", "Eid Al-Adha", "Father's Day", "Halloween", "Independence Day", "Labor Day", "Lent Start", "Lent Week 2", "Martin Luther King Day", "Memorial Day", "Mother's Day", "NBA Finals End", "NBA Finals Start", "New Year", "Orthodox Christmas", "Orthodox Easter", "Pesach End", "Presidents Day", "Purim End", "Ramadan Starts", "St. Patrick's Day", "Super Bowl", "Thanksgiving", "Valentine's Day", "Veterans Day"]
 
 ## Distribution of Values per day 
+Look at the variation of different amount of sales per day. 
 ```{r}
 hist(ecommerce_df$value, main = "Distribution of Quantities Sold (per day)", xlab = "Sales Value", col = "coral", breaks = 30)
 ```
@@ -92,8 +97,304 @@ ggplot(monthly_sales, aes(x = as.factor(month), y = value, fill = as.factor(year
   labs(title = "Monthly Sales Quantity Trends by Year", x = "Month", y = "Total Sales", fill = "Year")
 ```
 
+## Looking at Holiday Trends
+```{r}
+#holiday columns
+holiday_columns = grep("^event_name_", names(ecommerce_df), value = TRUE)
+
+# Create a consolidated holiday column
+ecommerce_df$holiday = apply(ecommerce_df[, holiday_columns], 1, function(row) {
+  holiday <- names(which(row == 1))
+  if (length(holiday) > 0) {
+    gsub("event_name_\\d_", "", holiday)  #do this to remove"event_name_" and the "_1" or "_2"
+  } else {
+    "No Holiday"
+  }
+})
+ecommerce_df$holiday <- as.character(ecommerce_df$holiday)
+glimpse(ecommerce_df)
+```
 
 
+```{r}
+library(ggplot2)
+
+# Summarize sales by holiday and year
+holiday_sales_yearly <- ecommerce_df %>%
+  mutate(year = format(as.Date(date), "%Y")) %>%  # Extract the year from the date
+  group_by(year, holiday) %>%
+  summarise(total_sales = sum(value, na.rm = TRUE)) %>%
+  arrange(desc(total_sales))
+
+holiday_sales_yearly
+```
+
+
+```{r}
+top_holidays = holiday_sales_yearly %>%
+  group_by(holiday) %>%
+  summarise(overall_sales = sum(total_sales)) %>%
+  arrange(desc(overall_sales)) %>%
+  slice_head(n = 10)  # Select top 10 holidays
+
+# Filter the original data for only these top holidays
+filtered_data = holiday_sales_yearly %>%
+  filter(holiday %in% top_holidays$holiday)
+
+# Create the bar plot
+ggplot(filtered_data, aes(x = reorder(holiday, -total_sales), y = total_sales, fill = year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Top 10 Holidays: Total Sales by Year", x = "Holiday", y = "Total Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "Set3")
+```
+```{r}
+#add weekday variable 
+ecommerce_df$weekday = weekdays(ecommerce_df$date)
+glimpse(ecommerce_df)
+```
+
+
+#Model Building
+
+We will look at value as the target variable for prediction. Predicting daily sales value will be the goal. This is a regression problem. 
+
+## Encode Variables
+Use the caret package in R to perform one-hot encoding of the categorical variables in the dataset ecommerce_df. 
+Convert categorical variables like state_id, dept_id, holiday, and weekday into numeric representations.
+```{r}
+library(caret)
+
+# One-hot encode categorical variables
+encoded_data = dummyVars(" ~ .", data = ecommerce_df)
+ecommerce_df_encoded = data.frame(predict(encoded_data, newdata = ecommerce_df))
+glimpse(ecommerce_df_encoded)
+```
+
+Normalize numberical columns. Normalize 'value' to imporve model performance.
+```{r}
+ecommerce_df_encoded$value <- scale(ecommerce_df_encoded$value)
+```
+
+
+## Split the data
+Set the seed for reproduceability:
+```{r}
+set.seed(271124)  #set seed
+```
+
+```{r}
+library(rsample)
+
+#20% for testing
+test_split <- initial_split(ecommerce_df_encoded, prop = 0.8)  # 80% for train+validation, 20% for test
+train_val <- training(test_split)  # Training and validation set
+test <- testing(test_split)        # Test set
+
+#split 80% into 60% training and 20% validation
+val_split <- initial_split(train_val, prop = 0.75)  # 75% of 80% is 60%
+train <- training(val_split)       # Training set
+valid <- testing(val_split)        # Validation set
+
+```
+
+```{r}
+dim(train)  #training set
+dim(valid)  #validation set
+dim(test)   #testing set
+```
+
+
+## Linear Regression
+```{r}
+lm_model <- lm(value ~ ., data = train)
+
+# Evaluate on test data
+lm_predictions <- predict(lm_model, test)
+lm_mse = mean((lm_predictions - test$value)^2)
+
+lm_rmse = sqrt(lm_mse) #root mean squared error
+lm_mae =mean(abs(lm_predictions - test$value)) #mean absolute error
+lm_r2 = 1 - (sum((lm_predictions - test$value)^2) / sum((test$value - mean(test$value))^2)) #r squared error
+
+#print the results
+cat("Linear Regression Metrics:\n")
+cat("MSE:", lm_mse, "\n")
+cat("RMSE:", lm_rmse, "\n")
+cat("MAE:", lm_mae, "\n")
+cat("R-squared:", lm_r2, "\n")
+```
+Linear regression predicted versus actual plot of the model:
+This plot shows the relationship between actual and predicted values. The points should ideally align along a 45-degree line.
+```{r}
+library(ggplot2)
+
+ggplot(data = data.frame(actual = test$value, predicted = lm_predictions), aes(x = actual, y = predicted)) +
+  geom_point(color = "lightblue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Linear Regression: Predicted vs Actual Values", x = "Actual Values", y = "Predicted Values") +
+  theme_minimal()
+```
+Linear regression residual plot:
+Use this plot to assess whether residuals are randomly distributed or not
+```{r}
+residuals = test$value - lm_predictions
+
+ggplot(data = data.frame(actual = test$value, residuals = residuals), aes(x = actual, y = residuals)) +
+  geom_point(color = "lightblue") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Linear Regression: Residuals vs Actual Values", x = "Actual Values", y = "Residuals") +
+  theme_minimal()
+```
+MSE, RMSE and MAE suggest that the errors in predicitonsar esmall, which indicate that the model is making accurate predictions. R-squared indicates that the model explains some variation in the target variable (value), which suggests a strong linear relationship. 
+
+Next, we will try Random Forest and XGBoost models. The relationship between the predictors and target variable may not be entirely linear. Linear regression would fail to capture this non-linearity. 
+
+## Random Forest
+Looks at non-linear relationships: 
+```{r}
+library(ranger) #using ranger because we used this in A3
+
+# Train a random forest model with ranger
+rf_model = ranger(
+  formula = value ~ ., 
+  data = train, 
+  num.trees = 100, 
+  importance = "impurity"  # Calculate variable importance
+)
+
+# Evaluate on test data
+rf_predictions = predict(rf_model, data = test)$predictions
+
+# Calculate metrics
+rf_mse = mean((rf_predictions - test$value)^2)
+rf_rmse = sqrt(rf_mse)
+rf_r2 = 1 - (sum((rf_predictions - test$value)^2) / sum((test$value - mean(test$value))^2))
+
+# Print metrics
+cat("Ranger Random Forest Metrics:\n")
+cat("MSE:", rf_mse, "\n")
+cat("RMSE:", rf_rmse, "\n")
+cat("R-squared:", rf_r2, "\n")
+
+```
+Random Forest predicted versus actual plot
+```{r}
+plot_data = data.frame(
+  actual = test$value,
+  predicted = rf_predictions
+)
+
+#predicted vs actual values
+ggplot(plot_data, aes(x = actual, y = predicted)) +
+  geom_point(color = "purple", alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "green", linetype = "dashed") +
+  labs(
+    title = "Random Forest: Predicted vs Actual Values",
+    x = "Actual Values",
+    y = "Predicted Values"
+  ) +
+  theme_minimal()
+```
+Random forest: residual plot
+```{r}
+plot_data$residuals <- plot_data$actual - plot_data$predicted
+
+# Plot residuals
+ggplot(plot_data, aes(x = actual, y = residuals)) +
+  geom_point(color = "purple", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "green", linetype = "dashed") +
+  labs(
+    title = "Residuals vs Actual Values (Random Forest)",
+    x = "Actual Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+This model performs much better than the linear regression model. We will now look at XGBoost to see if performance can increase even more in these tree models. 
+
+## XGBoost
+```{r}
+library(xgboost)
+
+# Convert data to matrix format
+train_matrix <- as.matrix(train[, -which(names(train) == "value")])
+test_matrix <- as.matrix(test[, -which(names(test) == "value")])
+train_labels <- train$value
+test_labels <- test$value
+
+# Train XGBoost model
+xgb_model <- xgboost(
+  data = train_matrix,
+  label = train_labels,
+  nrounds = 60,
+  objective = "reg:squarederror",  # Specify objective here
+  eval_metric = "rmse"
+)
+
+# Evaluate on test data
+xgb_predictions <- predict(xgb_model, test_matrix)
+
+# Calculate metrics
+xgb_mse <- mean((xgb_predictions - test_labels)^2)
+xgb_rmse <- sqrt(xgb_mse)
+xgb_r2 <- 1 - (sum((xgb_predictions - test_labels)^2) / sum((test_labels - mean(test_labels))^2))
+
+# Print metrics
+cat("XGBoost Metrics:\n")
+cat("MSE:", xgb_mse, "\n")
+cat("RMSE:", xgb_rmse, "\n")
+cat("R-squared:", xgb_r2, "\n")
+
+
+```
+```{r}
+plot_data = data.frame(
+  actual = test_labels,
+  predicted = xgb_predictions
+)
+
+ggplot(plot_data, aes(x = actual, y = predicted)) +
+  geom_point(color = "orange", alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "blue", linetype = "dashed") +
+  labs(
+    title = "XGBoost: Predicted vs Actual Values",
+    x = "Actual Values",
+    y = "Predicted Values"
+  ) +
+  theme_minimal()
+```
+
+
+```{r}
+plot_data$residuals = plot_data$actual - plot_data$predicted
+
+ggplot(plot_data, aes(x = actual, y = residuals)) +
+  geom_point(color = "orange", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "blue", linetype = "dashed") +
+  labs(
+    title = "XGBoost: Residuals vs Actual Values",
+    x = "Actual Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+```
+
+Random forest is performing extremely well with defaults and no hyperparameter tuning. 
+
+## Final Evaluations
+```{r}
+results <- data.frame(
+  Model = c("Linear Regression", "Random Forest", "XGBoost"),
+  MSE = c(lm_mse, rf_mse, xgb_mse),
+  RMSE = c(lm_rmse, rf_rmse, xgb_rmse),
+  R_squared = c(lm_r2, rf_r2, xgb_r2))
+
+print(results)
+```
+## Discussion
 
 
 
