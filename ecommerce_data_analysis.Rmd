@@ -256,7 +256,6 @@ Looks at non-linear relationships:
 ```{r}
 library(ranger) #using ranger because we used this in A3
 
-# Train a random forest model with ranger
 rf_model = ranger(
   formula = value ~ ., 
   data = train, 
@@ -264,15 +263,13 @@ rf_model = ranger(
   importance = "impurity"  # Calculate variable importance
 )
 
-# Evaluate on test data
 rf_predictions = predict(rf_model, data = test)$predictions
 
-# Calculate metrics
+#metrics
 rf_mse = mean((rf_predictions - test$value)^2)
 rf_rmse = sqrt(rf_mse)
 rf_r2 = 1 - (sum((rf_predictions - test$value)^2) / sum((test$value - mean(test$value))^2))
 
-# Print metrics
 cat("Ranger Random Forest Metrics:\n")
 cat("MSE:", rf_mse, "\n")
 cat("RMSE:", rf_rmse, "\n")
@@ -301,12 +298,12 @@ Random forest: residual plot
 ```{r}
 plot_data$residuals <- plot_data$actual - plot_data$predicted
 
-# Plot residuals
+#residuals
 ggplot(plot_data, aes(x = actual, y = residuals)) +
   geom_point(color = "purple", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "green", linetype = "dashed") +
   labs(
-    title = "Residuals vs Actual Values (Random Forest)",
+    title = "Random Forest: Residuals vs Actual Values",
     x = "Actual Values",
     y = "Residuals"
   ) +
@@ -318,13 +315,12 @@ This model performs much better than the linear regression model. We will now lo
 ```{r}
 library(xgboost)
 
-# Convert data to matrix format
+#data to matrix format
 train_matrix <- as.matrix(train[, -which(names(train) == "value")])
 test_matrix <- as.matrix(test[, -which(names(test) == "value")])
 train_labels <- train$value
 test_labels <- test$value
 
-# Train XGBoost model
 xgb_model <- xgboost(
   data = train_matrix,
   label = train_labels,
@@ -333,10 +329,9 @@ xgb_model <- xgboost(
   eval_metric = "rmse"
 )
 
-# Evaluate on test data
+#test data
 xgb_predictions <- predict(xgb_model, test_matrix)
 
-# Calculate metrics
 xgb_mse <- mean((xgb_predictions - test_labels)^2)
 xgb_rmse <- sqrt(xgb_mse)
 xgb_r2 <- 1 - (sum((xgb_predictions - test_labels)^2) / sum((test_labels - mean(test_labels))^2))
