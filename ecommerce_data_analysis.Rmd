@@ -131,23 +131,25 @@ holiday_sales_yearly
 
 
 ```{r}
+#exclude 'No Holiday'
 top_holidays = holiday_sales_yearly %>%
+  filter(holiday != "No Holiday") %>%  # Exclude 'No Holiday'
   group_by(holiday) %>%
   summarise(overall_sales = sum(total_sales)) %>%
   arrange(desc(overall_sales)) %>%
   slice_head(n = 10)  # Select top 10 holidays
 
-# Filter the original data for only these top holidays
+#filter original data for only these top holidays
 filtered_data = holiday_sales_yearly %>%
   filter(holiday %in% top_holidays$holiday)
 
-# Create the bar plot
 ggplot(filtered_data, aes(x = reorder(holiday, -total_sales), y = total_sales, fill = year)) +
   geom_bar(stat = "identity", position = "dodge") +
   labs(title = "Top 10 Holidays: Total Sales by Year", x = "Holiday", y = "Total Sales") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   scale_fill_brewer(palette = "Set3")
+
 ```
 ```{r}
 #add weekday variable 
@@ -161,41 +163,69 @@ glimpse(ecommerce_df)
 We will look at value as the target variable for prediction. Predicting daily sales value will be the goal. This is a regression problem. 
 
 ## Encode Variables
+Encoding Day of Week and Month 
+We will use cyclic encoding for better representation of periodicity in data. Encoding cyclicly allows model to learn cyclic pattern effectively. 
+
+```{r}
+ecommerce_df$month <- as.numeric(ecommerce_df$month)
+ecommerce_df_encoded = ecommerce_df  
+
+# Encode day of the week cyclically (assuming a column named "day_of_week")
+ecommerce_df_encoded$day_sin <- sin(2 * pi * ecommerce_df$wday / 7)
+ecommerce_df_encoded$day_cos <- cos(2 * pi * ecommerce_df$wday / 7)
+
+# Encode months cyclically (assuming a column named "month")
+ecommerce_df_encoded$month_sin <- sin(2 * pi * ecommerce_df$month / 12)
+ecommerce_df_encoded$month_cos <- cos(2 * pi * ecommerce_df$month / 12)
+
+# Optionally drop the original columns
+ecommerce_df_encoded$wday <- NULL
+ecommerce_df_encoded$month <- NULL
+
+head(ecommerce_df_encoded)
+```
+
 Use the caret package in R to perform one-hot encoding of the categorical variables in the dataset ecommerce_df. 
 Convert categorical variables like state_id, dept_id, holiday, and weekday into numeric representations.
 ```{r}
 library(caret)
-
-# One-hot encode categorical variables
-encoded_data = dummyVars(" ~ .", data = ecommerce_df)
-ecommerce_df_encoded = data.frame(predict(encoded_data, newdata = ecommerce_df))
+#one-hot encode categorical variables
+encoded_data <- dummyVars(" ~ .", data = ecommerce_df_encoded)
+ecommerce_df_encoded <- data.frame(predict(encoded_data, newdata = ecommerce_df_encoded))
 glimpse(ecommerce_df_encoded)
 ```
 
-Normalize numberical columns. Normalize 'value' to imporve model performance.
+Normalize numberical columns. Normalize 'value' to improve model performance.
+```{r}
+head(ecommerce_df_encoded$value)
+```
+
 ```{r}
 ecommerce_df_encoded$value <- scale(ecommerce_df_encoded$value)
 ```
 
+```{r}
+head(ecommerce_df_encoded$value)
+```
 
 ## Split the data
 Set the seed for reproduceability:
 ```{r}
-set.seed(271124)  #set seed
+set.seed(271124) #set seed
 ```
 
 ```{r}
 library(rsample)
 
-#20% for testing
-test_split <- initial_split(ecommerce_df_encoded, prop = 0.8)  # 80% for train+validation, 20% for test
-train_val <- training(test_split)  # Training and validation set
-test <- testing(test_split)        # Test set
+#sequentially splitting the data: 20% testing
+test_split = initial_split(ecommerce_df_encoded, prop = 0.8)  #80%, 20% for test
+train_val = training(test_split) #training and validation set
+test = testing(test_split) #test set
 
-#split 80% into 60% training and 20% validation
-val_split <- initial_split(train_val, prop = 0.75)  # 75% of 80% is 60%
-train <- training(val_split)       # Training set
-valid <- testing(val_split)        # Validation set
+#split into 60% training and 20% validation
+val_split = initial_split(train_val, prop = 0.75) #75% of 80% is 60%
+train = training(val_split) #training set
+valid = testing(val_split) #validation set
 
 ```
 
@@ -205,12 +235,16 @@ dim(valid)  #validation set
 dim(test)   #testing set
 ```
 
+```{r}
+head(valid)
+```
+
 
 ## Linear Regression
 ```{r}
 lm_model <- lm(value ~ ., data = train)
 
-# Evaluate on test data
+#evaluate on test data
 lm_predictions <- predict(lm_model, test)
 lm_mse = mean((lm_predictions - test$value)^2)
 
@@ -218,7 +252,6 @@ lm_rmse = sqrt(lm_mse) #root mean squared error
 lm_mae =mean(abs(lm_predictions - test$value)) #mean absolute error
 lm_r2 = 1 - (sum((lm_predictions - test$value)^2) / sum((test$value - mean(test$value))^2)) #r squared error
 
-#print the results
 cat("Linear Regression Metrics:\n")
 cat("MSE:", lm_mse, "\n")
 cat("RMSE:", lm_rmse, "\n")
@@ -247,7 +280,7 @@ ggplot(data = data.frame(actual = test$value, residuals = residuals), aes(x = ac
   labs(title = "Linear Regression: Residuals vs Actual Values", x = "Actual Values", y = "Residuals") +
   theme_minimal()
 ```
-MSE, RMSE and MAE suggest that the errors in predicitonsar esmall, which indicate that the model is making accurate predictions. R-squared indicates that the model explains some variation in the target variable (value), which suggests a strong linear relationship. 
+MSE, RMSE and MAE suggest that the errors in predication are small, which indicate that the model is making accurate predictions. R-squared indicates that the model explains some variation in the target variable (value), which suggests a strong linear relationship. 
 
 Next, we will try Random Forest and XGBoost models. The relationship between the predictors and target variable may not be entirely linear. Linear regression would fail to capture this non-linearity. 
 
@@ -260,19 +293,21 @@ rf_model = ranger(
   formula = value ~ ., 
   data = train, 
   num.trees = 100, 
-  importance = "impurity"  # Calculate variable importance
+  importance = "impurity"  #calculate variable importance
 )
 
 rf_predictions = predict(rf_model, data = test)$predictions
 
 #metrics
 rf_mse = mean((rf_predictions - test$value)^2)
+rf_mae =mean(abs(rf_predictions - test$value)) #mean absolute error
 rf_rmse = sqrt(rf_mse)
 rf_r2 = 1 - (sum((rf_predictions - test$value)^2) / sum((test$value - mean(test$value))^2))
 
 cat("Ranger Random Forest Metrics:\n")
 cat("MSE:", rf_mse, "\n")
 cat("RMSE:", rf_rmse, "\n")
+cat("MAE:", rf_mae, "\n")
 cat("R-squared:", rf_r2, "\n")
 
 ```
@@ -296,7 +331,7 @@ ggplot(plot_data, aes(x = actual, y = predicted)) +
 ```
 Random forest: residual plot
 ```{r}
-plot_data$residuals <- plot_data$actual - plot_data$predicted
+plot_data$residuals = plot_data$actual - plot_data$predicted
 
 #residuals
 ggplot(plot_data, aes(x = actual, y = residuals)) +
@@ -316,12 +351,12 @@ This model performs much better than the linear regression model. We will now lo
 library(xgboost)
 
 #data to matrix format
-train_matrix <- as.matrix(train[, -which(names(train) == "value")])
-test_matrix <- as.matrix(test[, -which(names(test) == "value")])
-train_labels <- train$value
-test_labels <- test$value
+train_matrix = as.matrix(train[, -which(names(train) == "value")])
+test_matrix = as.matrix(test[, -which(names(test) == "value")])
+train_labels = train$value
+test_labels = test$value
 
-xgb_model <- xgboost(
+xgb_model = xgboost(
   data = train_matrix,
   label = train_labels,
   nrounds = 60,
@@ -329,17 +364,18 @@ xgb_model <- xgboost(
   eval_metric = "rmse"
 )
 
-#test data
-xgb_predictions <- predict(xgb_model, test_matrix)
+xgb_predictions <- predict(xgb_model, test_matrix) #test data
 
-xgb_mse <- mean((xgb_predictions - test_labels)^2)
-xgb_rmse <- sqrt(xgb_mse)
-xgb_r2 <- 1 - (sum((xgb_predictions - test_labels)^2) / sum((test_labels - mean(test_labels))^2))
+xgb_mse = mean((xgb_predictions - test_labels)^2)
+xgb_mae =mean(abs(xgb_predictions - test$value)) #mean absolute error
+xgb_rmse = sqrt(xgb_mse)
+xgb_r2 = 1 - (sum((xgb_predictions - test_labels)^2) / sum((test_labels - mean(test_labels))^2))
 
 # Print metrics
 cat("XGBoost Metrics:\n")
 cat("MSE:", xgb_mse, "\n")
 cat("RMSE:", xgb_rmse, "\n")
+cat("MAE:", xgb_mae, "\n")
 cat("R-squared:", xgb_r2, "\n")
 
 
@@ -378,18 +414,74 @@ ggplot(plot_data, aes(x = actual, y = residuals)) +
 ```
 
 Random forest is performing extremely well with defaults and no hyperparameter tuning. 
+We can add hyperparamter tuning to see if we can get slightly better results. The best hyperparameter is chose based on the lowest MSE, then the RMSE, MAE, and R_squared are calculated. 
 
-## Final Evaluations
 ```{r}
-results <- data.frame(
+library(xgboost)
+
+param_grid = expand.grid(
+  eta = c(0.05, 0.1, 0.2), 
+  max_depth = c(3, 6), 
+  nrounds = c(50, 100, 200) 
+)
+
+results = data.frame()
+
+for (i in 1:nrow(param_grid)) {
+  params = param_grid[i, ]
+  
+  xgb_model = xgboost(
+    data = train_matrix,
+    label = train_labels,
+    nrounds = params$nrounds,
+    eta = params$eta,
+    max_depth = params$max_depth,
+    objective = "reg:squarederror",
+    eval_metric = "rmse",
+    verbose = 0
+  )
+  
+  predictions = predict(xgb_model, test_matrix) 
+  xgb_tuning_mse = mean((predictions - test_labels)^2)
+  xgb_tuning_rmse = sqrt(mse)
+  xgb_tuning_mae = mean(abs(predictions - test_labels))
+  xgb_tuning_r_squared = 1 - (sum((predictions - test_labels)^2) / sum((test_labels - mean(test_labels))^2))
+  
+  results = rbind(results, cbind(params, mse, rmse, mae, r_squared))
+}
+
+colnames(results) = c("eta", "max_depth", "nrounds", "MSE", "RMSE", "MAE", "R_squared")
+best_params = results[which.min(results$MSE), ]
+print(best_params)
+```
+Results of the models
+```{r}
+results = data.frame(
   Model = c("Linear Regression", "Random Forest", "XGBoost"),
-  MSE = c(lm_mse, rf_mse, xgb_mse),
-  RMSE = c(lm_rmse, rf_rmse, xgb_rmse),
-  R_squared = c(lm_r2, rf_r2, xgb_r2))
+  MSE = c(lm_mse, rf_mse, xgb_tuning_mse),
+  RMSE = c(lm_rmse, rf_rmse, xgb_tuning_rmse),
+  MAE = c(lm_mae, rf_mae, xgb_tuning_mae),
+  R_squared = c(lm_r2, rf_r2, xgb_tuning_r_squared))
 
 print(results)
 ```
-## Discussion
+
+
+Bar Plot of Metrics Across Models: 
+```{r}
+library(reshape2)
+library(ggplot2)
+
+results_long = melt(results, id.vars = "Model", variable.name = "Metric", value.name = "Value")
+
+ggplot(results_long, aes(x = Model, y = Value, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Comparison of Metrics Across Models", x = "Model", y = "Value", fill = "Metric") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
 
 
 
