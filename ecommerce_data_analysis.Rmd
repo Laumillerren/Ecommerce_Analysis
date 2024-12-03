@@ -482,7 +482,9 @@ ggplot(results_long, aes(x = Model, y = Value, fill = Metric)) +
 
 ```
 
+## Discussion 
 
+Linear Regression serves as a baseline model but struggles to model complex relationships in the data.Ensemble methods such as random forest handle non-linear relationships much better. The random forest model explains 96.34% of the variance, which indicates a better fit compared to the Linear Regression model. XGBoost outperforms both Linear Regression and Random Forest models. The XGBoost model is able to handle non-linear relationships and manage feature importance, which makes it the best performing model for this dataset. 
 
 
 
